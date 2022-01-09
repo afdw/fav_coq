@@ -1,13 +1,13 @@
 From Ltac2 Require Import Ltac2.
 From Ltac2 Require Message.
+From Ltac2 Require Import Printf.
 From Ltac2 Require Constr.
 
 Set Default Proof Mode "Classic".
-
-Ltac2 mutable registered_cost_functions : unit -> (constr * constr) list := fun () => [].
+Set Ltac2 Backtrace.
 
 Ltac2 cost_sum a_cost b_cost :=
-  Constr.Unsafe.make (Constr.Unsafe.App 'plus (Array.of_list [a_cost; b_cost])).
+  Constr.Unsafe.make (Constr.Unsafe.App 'plus (Array.of_list ([a_cost; b_cost]))).
 
 Ltac2 rec count_lambda_depth constr :=
   match Constr.Unsafe.kind constr with
@@ -23,87 +23,238 @@ Ltac2 rec to_prod_nat type_constr i n :=
     | Constr.Unsafe.Prod param body =>
       Constr.Unsafe.make (Constr.Unsafe.Prod param (to_prod_nat body (Int.add i 1) n))
     | _ =>
-      Message.print (Message.of_string
-        "Warning: compute_time can not handle fixpoint with non-prod type");
+      printf "Warning: compute_time can not handle fixpoint with non-prod type";
       type_constr
     end.
 
-Ltac2 rec compute_cost input_constr :=
+Inductive __compute_cost_fix_pair {S T : Type} :=
+  | __compute_cost_fix_pair_value : S -> T -> _.
+
+Definition __compute_cost_fix_pair_fst {S T} (p : @__compute_cost_fix_pair S T) :=
+  match p with
+  | __compute_cost_fix_pair_value x _ => x
+  end.
+
+Ltac2 rec join_replace replacements a_constr b_constr :=
+  printf "Trace: join_replace _ %t %t" a_constr b_constr;
+  match Constr.Unsafe.kind a_constr with
+  | Constr.Unsafe.Rel rel =>
+    match Constr.Unsafe.kind b_constr with
+    | Constr.Unsafe.Rel _ => a_constr
+    | Constr.Unsafe.Var var =>
+      Constr.Unsafe.make (
+        Constr.Unsafe.App
+        '@__compute_cost_fix_pair_fst
+        (Array.of_list [
+          '_;
+          '_;
+          Constr.Unsafe.make (
+            Constr.Unsafe.App
+            '@__compute_cost_fix_pair_value
+            (Array.of_list [
+              '_;
+              '_;
+              List.assoc Ident.equal var replacements;
+              a_constr
+            ])
+          )
+        ])
+      )
+    | _ => Control.throw Match_failure
+    end
+  | Constr.Unsafe.Var _ => a_constr
+  | Constr.Unsafe.Evar evar a_args =>
+    match Constr.Unsafe.kind b_constr with
+    | Constr.Unsafe.Evar evar b_args =>
+      Constr.Unsafe.make (
+        Constr.Unsafe.Evar
+        evar
+        (Array.map2 (join_replace replacements) a_args b_args)
+      )
+    | _ => Control.throw Match_failure
+    end
+  | Constr.Unsafe.Lambda arg a_body =>
+    match Constr.Unsafe.kind b_constr with
+    | Constr.Unsafe.Lambda arg b_body =>
+      Constr.Unsafe.make (
+        Constr.Unsafe.Lambda
+        arg
+        (join_replace replacements a_body b_body)
+      )
+    | _ => Control.throw Match_failure
+    end
+  | Constr.Unsafe.Ind _ _ => a_constr
+  | Constr.Unsafe.Constructor _ _ => a_constr
+  | Constr.Unsafe.Case ci a_c iv a_t a_bl =>
+    match iv with
+    | Constr.Unsafe.NoInvert => ()
+    | Constr.Unsafe.CaseInvert _ =>
+      printf "Warning: compute_time can not handle match with CaseInvert; what it even means?"
+    end;
+    match Constr.Unsafe.kind b_constr with
+    | Constr.Unsafe.Case ci b_c iv b_t b_bl =>
+      Constr.Unsafe.make (
+        Constr.Unsafe.Case
+        ci
+        (join_replace replacements a_c b_c)
+        iv
+        (join_replace replacements a_t b_t)
+        (Array.map2 (join_replace replacements) a_bl b_bl)
+      )
+    | _ => Control.throw Match_failure
+    end
+  | Constr.Unsafe.Fix recs i nas a_cs =>
+    match Constr.Unsafe.kind b_constr with
+    | Constr.Unsafe.Fix recs i nas b_cs =>
+      Constr.Unsafe.make (
+        Constr.Unsafe.Fix
+        recs
+        i
+        nas
+        (Array.map2 (join_replace replacements) a_cs b_cs)
+      )
+    | _ => Control.throw Match_failure
+    end
+  | Constr.Unsafe.Constant _ _ => a_constr
+  | Constr.Unsafe.App a_fun a_args =>
+    match Constr.Unsafe.kind b_constr with
+    | Constr.Unsafe.App b_fun b_args =>
+      Constr.Unsafe.make (
+        Constr.Unsafe.App
+        (join_replace replacements a_fun b_fun)
+        (Array.map2 (join_replace replacements) a_args b_args)
+      )
+    | _ => Control.throw Match_failure
+    end
+  | _ => Control.throw Match_failure
+  end.
+
+Ltac2 rec compute_cost cost_functions depth input_constr :=
   let try_builtin input_constr fallback :=
-    match List.assoc_opt Constr.equal input_constr (registered_cost_functions ()) with
-    | Some result_constr =>
-      Message.print (Message.of_int (List.length (registered_cost_functions ())));
-      result_constr
+    match List.assoc_opt (fun (a_constr, a_depth) (b_constr, b_depth) =>
+      Bool.and (Constr.equal a_constr b_constr) (Int.equal a_depth b_depth)
+    ) (input_constr, depth) cost_functions with
+    | Some result_constr => result_constr
     | None => fallback ()
     end in
-  Message.print (Message.concat (Message.of_string "Trace: compute_time ") (Message.of_constr input_constr));
+  printf "Trace: compute_time _ %i %t" depth input_constr;
   let result_constr :=
     try_builtin input_constr (fun () =>
       match Constr.Unsafe.kind input_constr with
-      | Constr.Unsafe.Rel rel => '1
-      | Constr.Unsafe.Var var => '1
+      | Constr.Unsafe.Lambda _ _ => ()
+      | Constr.Unsafe.Fix _ _ _ _ => ()
+      | Constr.Unsafe.Constant _ _ => ()
+      | _ =>
+        if Int.equal depth 0
+        then ()
+        else printf "Warning: compute_time expects depth to be 0 at this point"
+      end;
+      match Constr.Unsafe.kind input_constr with
+      | Constr.Unsafe.Rel _ => '1
+      | Constr.Unsafe.Var _ => '1
+      | Constr.Unsafe.Evar _ _ => printf "Warning: compute_time assumes that evars are constant-time"; '1
       | Constr.Unsafe.Lambda arg body =>
-        let body_cost := compute_cost body in
-        Constr.Unsafe.make (Constr.Unsafe.Lambda arg body_cost)
-      | Constr.Unsafe.Constructor cstr instance => '1
+        if Int.equal depth 0
+        then '1
+        else
+          let body_cost := compute_cost cost_functions (Int.sub depth 1) body in
+          Constr.Unsafe.make (Constr.Unsafe.Lambda arg body_cost)
+      | Constr.Unsafe.Constructor _ _ => '1
       | Constr.Unsafe.Case ci c iv t bl =>
+        let t_cost := compute_cost cost_functions 0 t in
         let c_replacement := match Constr.Unsafe.kind c with
         | Constr.Unsafe.Lambda arg body => Constr.Unsafe.make (Constr.Unsafe.Lambda arg 'nat)
-        | _ =>
-          Message.print (Message.of_string
-            "Warning: compute_time can not handle match with non-lambda 'c'");
-          c
+        | _ => printf "Warning: compute_time can not handle match with non-lambda 'c'"; c
         end in
         match iv with
         | Constr.Unsafe.NoInvert => ()
         | Constr.Unsafe.CaseInvert _ =>
-          Message.print (Message.of_string
-            "Warning: compute_time can not handle match with CaseInvert; what it even means?")
+          printf "Warning: compute_time can not handle match with CaseInvert; what it even means?"
         end;
-        let bl_costs := Array.map compute_cost bl in
-        Constr.Unsafe.make (Constr.Unsafe.Case ci c_replacement iv t bl_costs)
+        let bl_costs := Array.map (fun b =>
+          compute_cost cost_functions (count_lambda_depth b) b
+        ) bl in
+        let branches_cost := Constr.Unsafe.make (Constr.Unsafe.Case ci c_replacement iv t bl_costs) in
+        cost_sum t_cost branches_cost
       | Constr.Unsafe.Fix recs i nas cs =>
-        let nas_replacements := Array.mapi (fun i binder =>
+        let nas_replacements := Array.mapi (fun j binder =>
           Constr.Binder.make
             (Constr.Binder.name binder)
-            (to_prod_nat (Constr.Binder.type binder) 0 (count_lambda_depth (Array.get cs i)))
+            (to_prod_nat (Constr.Binder.type binder) 0 depth)
         ) nas in
-        let cs_costs := Array.map compute_cost cs in
+        let cs_costs := Array.mapi (fun k c =>
+          let idents :=
+            List.fold_right (fun _ prev_idents =>
+              List.append prev_idents [Fresh.fresh (Fresh.Free.of_ids prev_idents) @__compute_cost_fix_ident]
+            ) [] (Array.to_list nas) in
+          printf "Trace: compute_time, fix %i: had %t" k c;
+          let c_subst :=
+            Constr.Unsafe.substnl
+            (List.map (fun ident => Constr.Unsafe.make (Constr.Unsafe.Var ident)) idents)
+            0
+            c in
+          printf "Trace: compute_time, fix %i: after substitution got %t" k c_subst;
+          let c_joined :=
+            join_replace
+            (List.mapi (fun j ident => (ident, Constr.Unsafe.make (Constr.Unsafe.Fix recs j nas cs))) idents)
+            c
+            c_subst in
+          printf "Trace: compute_time, fix %i: after joining got %t" k c_joined;
+          compute_cost cost_functions depth c_joined
+        ) cs in
         Constr.Unsafe.make (Constr.Unsafe.Fix recs i nas_replacements cs_costs)
+      | Constr.Unsafe.Constant _ _ =>
+        let red_expr := eval red in $input_constr in
+        compute_cost cost_functions depth red_expr
       | Constr.Unsafe.App fun_ args =>
+        let real_args :=
+          if Constr.equal fun_ '@__compute_cost_fix_pair_fst
+          then Array.sub args 3 (Int.sub (Array.length args) 3)
+          else args in
         let fun_cost :=
-          match Constr.Unsafe.kind fun_ with
-          | Constr.Unsafe.Constructor _ _ => '1
-          | Constr.Unsafe.Rel rel =>
-            Constr.Unsafe.make (Constr.Unsafe.App (Constr.Unsafe.make (Constr.Unsafe.Rel rel)) args)
-          | _ =>
-            let cost_fun := try_builtin fun_ (fun () =>
-              let fun_red := eval red in $fun_ in
-              compute_cost fun_red
-            ) in
-            Constr.Unsafe.make (Constr.Unsafe.App cost_fun args)
-          end in
-        let args_costs := Array.map compute_cost args in
+          if Constr.equal fun_ '@__compute_cost_fix_pair_fst
+          then
+            match Constr.Unsafe.kind (Array.get args 2) with
+            | Constr.Unsafe.App _ inner_args =>
+              let cost_fun := Array.get inner_args 3 in
+              Constr.Unsafe.make (Constr.Unsafe.App cost_fun real_args)
+            | _ => Control.throw Match_failure
+            end
+          else
+            match Constr.Unsafe.kind fun_ with
+            | Constr.Unsafe.Constructor _ _ => '1
+            | _ =>
+              let cost_fun := compute_cost cost_functions (Array.length real_args) fun_ in
+              Constr.Unsafe.make (Constr.Unsafe.App cost_fun args)
+            end in
+        let args_costs := Array.map (compute_cost cost_functions 0) real_args in
         let args_cost := Array.fold_left cost_sum '0 args_costs in
         cost_sum fun_cost args_cost
       | _ => Control.throw Match_failure
       end
     ) in
-  Message.print (Message.concat (Message.of_string "Trace:           ^- ") (Message.of_constr result_constr));
+  printf "Trace:            ^- %t" result_constr;
   result_constr.
 
-Ltac2 refine_compute_cost input_constr :=
+Ltac2 mutable registered_cost_functions : unit -> ((constr * int) * constr) list := fun () => [].
+
+Ltac2 refine_compute_cost cost_functions depth input_constr folds :=
   Control.refine (fun () =>
-    let result_constr := compute_cost input_constr in
-    eval simpl in $result_constr
+    let result_constr :=
+      compute_cost
+      (List.append cost_functions (registered_cost_functions ()))
+      depth
+      input_constr in
+    let simplified_constr := eval simpl in $result_constr in
+    Std.eval_fold folds simplified_constr
   ).
 
-Definition mul_cost n m := ltac2:(refine_compute_cost '(n * m)).
+Definition mul_cost := ltac2:(refine_compute_cost [] 2 'Nat.mul ['Nat.mul]).
 
 Ltac2 default_registered_cost_functions () :=
   [
-    ('plus, '(fun (_ _ : nat) => 1));
-    ('Nat.mul, '(fun (_ _ : nat) => 1))
+    (('plus, 2), '(fun (_ _ : nat) => 1));
+    (('Nat.mul, 2), '(fun (_ _ : nat) => 1))
   ].
 Ltac2 Set registered_cost_functions := fun () => default_registered_cost_functions ().
 
@@ -113,12 +264,12 @@ Fixpoint nat_id n :=
   | S n' => S (nat_id n')
   end.
 
-Definition nat_id_cost n := ltac2:(refine_compute_cost '(nat_id n)).
+Definition nat_id_cost := ltac2:(refine_compute_cost [] 1 'nat_id []).
 
 Fixpoint is_even n :=
   match n with
   | 0 => true
-  | S n' => is_odd n'
+  | S n' => negb (negb (is_odd n'))
   end
 with is_odd n :=
   match n with
@@ -126,7 +277,7 @@ with is_odd n :=
   | S n' => is_even n'
   end.
 
-Definition is_even_cost n := ltac2:(refine_compute_cost '(is_even n)).
+Definition is_even_cost := ltac2:(refine_compute_cost [] 1 'is_even ['is_even; 'is_odd]).
 
 Fixpoint factorial n :=
   match n with
@@ -134,4 +285,24 @@ Fixpoint factorial n :=
   | S n' => n * factorial n'
   end.
 
-Definition factorial_cost n := ltac2:(refine_compute_cost '(factorial n)).
+Definition factorial_cost := ltac2:(refine_compute_cost [] 1 'factorial []).
+
+Definition filter {T} (predicate : T -> bool) :=
+  fix filter (list : list T) :=
+    match list with
+    | nil => nil
+    | cons element list' =>
+      if predicate element
+      then cons element (filter list')
+      else filter list'
+    end.
+
+Definition filter_cost {T} (predicate : T -> bool) (predicate_cost : T -> nat) (list_ : list T) : nat.
+  ltac2:(
+    let filter_concrete := eval red in (@filter T predicate) in
+    refine_compute_cost [(('predicate, 1), 'predicate_cost)] 0 '($filter_concrete list_) []
+  ).
+  all: try exact unit; try exact tt.
+Defined.
+
+Compute filter_cost (fun x => true) (fun x => 1) (1 :: 2 :: 3 :: 4 :: 5 :: 6 :: 7 :: nil).
