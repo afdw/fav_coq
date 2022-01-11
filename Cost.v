@@ -6,6 +6,23 @@ From Ltac2 Require Constr.
 Set Default Proof Mode "Classic".
 Set Ltac2 Backtrace.
 
+Ltac2 rec string_to_list s :=
+  let rec aux s i :=
+    if Int.equal (String.length s) i
+    then []
+    else (String.get s i) :: (aux s (Int.add i 1)) in
+  aux s 0.
+
+Ltac2 string_of_list l :=
+  let s := String.make (List.length l) (String.get " " 0) in
+  let _ := List.mapi (fun i c => String.set s i c) l in
+  s.
+
+Ltac2 string_concat s t :=
+  string_of_list (List.append (string_to_list s) (string_to_list t)).
+
+Module Cost.
+
 Ltac2 cost_sum a_cost b_cost :=
   Constr.Unsafe.make (Constr.Unsafe.App 'plus (Array.of_list ([a_cost; b_cost]))).
 
@@ -179,7 +196,13 @@ Ltac2 rec compute_cost cost_functions depth input_constr :=
       | Constr.Unsafe.Fix recs i nas cs =>
         let nas_replacements := Array.mapi (fun j binder =>
           Constr.Binder.make
-            (Constr.Binder.name binder)
+            (
+              Option.map
+              (fun ident =>
+                Option.get (Ident.of_string (string_concat (Ident.to_string ident) "_cost"))
+              )
+              (Constr.Binder.name binder)
+            )
             (to_prod_nat (Constr.Binder.type binder) 0 depth)
         ) nas in
         let cs_costs := Array.mapi (fun k c =>
@@ -249,7 +272,11 @@ Ltac2 refine_compute_cost cost_functions depth input_constr folds :=
     Std.eval_fold folds simplified_constr
   ).
 
+Section Example.
+
 Definition mul_cost := ltac2:(refine_compute_cost [] 2 'Nat.mul ['Nat.mul]).
+
+End Example.
 
 Ltac2 default_registered_cost_functions () :=
   [
@@ -257,6 +284,8 @@ Ltac2 default_registered_cost_functions () :=
     (('Nat.mul, 2), '(fun (_ _ : nat) => 1))
   ].
 Ltac2 Set registered_cost_functions := fun () => default_registered_cost_functions ().
+
+Section Example.
 
 Fixpoint nat_id n :=
   match n with
@@ -297,12 +326,11 @@ Definition filter {T} (predicate : T -> bool) :=
       else filter list'
     end.
 
-Definition filter_cost {T} (predicate : T -> bool) (predicate_cost : T -> nat) (list_ : list T) : nat.
-  ltac2:(
-    let filter_concrete := eval red in (@filter T predicate) in
-    refine_compute_cost [(('predicate, 1), 'predicate_cost)] 0 '($filter_concrete list_) []
-  ).
-  all: try exact unit; try exact tt.
-Defined.
+Definition filter_cost {T} predicate predicate_cost :=
+  ltac2:(refine_compute_cost [(('predicate, 1), 'predicate_cost)] 1 (eval red in (@filter T predicate)) []).
 
 Compute filter_cost (fun x => true) (fun x => 1) (1 :: 2 :: 3 :: 4 :: 5 :: 6 :: 7 :: nil).
+
+End Example.
+
+End Cost.
