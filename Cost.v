@@ -44,6 +44,14 @@ Ltac2 rec to_prod_nat type_constr i n :=
       type_constr
     end.
 
+Ltac2 rec is_constant_one constr :=
+  Bool.or
+    (Constr.equal constr '1)
+    (match Constr.Unsafe.kind constr with
+    | Constr.Unsafe.Lambda args body => is_constant_one body
+    | _ => false
+    end).
+
 Inductive __compute_cost_fix_pair {S T : Type} :=
   | __compute_cost_fix_pair_value : S -> T -> _.
 
@@ -190,7 +198,10 @@ Ltac2 rec compute_cost cost_functions depth input_constr :=
         let bl_costs := Array.map (fun b =>
           compute_cost cost_functions (count_lambda_depth b) b
         ) bl in
-        let branches_cost := Constr.Unsafe.make (Constr.Unsafe.Case ci c_replacement iv t bl_costs) in
+        let branches_cost :=
+          if Array.for_all is_constant_one bl_costs
+          then '1
+          else Constr.Unsafe.make (Constr.Unsafe.Case ci c_replacement iv t bl_costs) in
         cost_sum t_cost branches_cost
       | Constr.Unsafe.Fix recs i nas cs =>
         let nas_replacements := Array.mapi (fun j binder =>

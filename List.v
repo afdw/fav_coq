@@ -1,8 +1,9 @@
-Load "Cost".
+Load Cost.
 
 Require Import Coq.Bool.Bool.
 Require Import Coq.ZArith.ZArith.
 Require Import Lia.
+Require Import ArithRing.
 
 Undelimit Scope nat_scope.
 Delimit Scope nat_scope with Nat.
@@ -115,7 +116,7 @@ Theorem filter_cost_linear_when_predicate_cost_constant :
   unary_cost_constant predicate_Cost ->
   big_o (filter_cost predicate) (fun (l : list A) => 1 + length l).
 Proof.
-  intros ? ? ? ?. destruct H as (c & H). exists (6 + c). intros l. induction l.
+  intros ? ? ? ?. destruct H as (c & H). exists (c + 6). intros l. induction l.
   - simpl. lia.
   - simpl. specialize (H a). destruct (predicate a); lia.
 Qed.
@@ -143,104 +144,93 @@ Qed.
 
 End Example.
 
-Class DecidableBinaryRelation {A} (r : A -> A -> Prop) := {
-  decide_binary_relation : A -> A -> bool;
-  DecidableBinaryRelation_spec : forall a b, reflect (r a b) (decide_binary_relation a b);
-}.
+Fixpoint list_forall {A} f (l : list A) :=
+  match l with
+  | [] => True
+  | x :: l' => f x /\ list_forall f l'
+  end.
 
-Class TotalOrder {A} (r : A -> A -> Prop) := {
-  TotalOrder_DecidableBinaryRelation :> DecidableBinaryRelation r;
-  TotalOrder_reflexivity : forall a, r a a;
-  TotalOrder_transitivity : forall a b c, r a b -> r b c -> r a c;
-  TotalOrder_antisymmetry : forall a b, r a b -> r b a -> a = b;
-  TotalOrder_totality : forall a b, r a b \/ r b a;
-}.
-
-Class CostTotalOrder {A} (r : A -> A -> Prop) := {
-  CostTotalOrder_TotalOrder :> TotalOrder r;
-  CostTotalOrder_cost : Cost (Signature [_; _] _) decide_binary_relation;
-}.
-
-Class CostConstantTotalOrder {A} (r : A -> A -> Prop) := {
-  CostConstantTotalOrder_CostTotalOrder :> CostTotalOrder r;
-  CostConstantTotalOrder_cost_constant : binary_cost_constant CostTotalOrder_cost;
-}.
-
-#[export, program] Instance nat_le_DecidableBinaryRelation : DecidableBinaryRelation Nat.le := {
-  decide_binary_relation := Nat.leb;
-}.
-Next Obligation.
-  apply Nat.leb_spec0.
-Qed.
-
-#[export, program] Instance nat_le_TotalOrder : TotalOrder Nat.le.
-Next Obligation.
-  lia.
-Qed.
-Next Obligation.
-  lia.
-Qed.
-Next Obligation.
-  lia.
-Qed.
-
-#[export, program] Instance nat_leb_Cost : Cost (Signature [_; _] _) Nat.leb := {
-  cost_fun := fun _ _ => 1;
-}.
-
-#[export, program] Instance nat_le_CostTotalOrder : CostTotalOrder Nat.le.
-
-#[export, program] Instance nat_le_CostConstantTotalOrder : CostConstantTotalOrder Nat.le.
-Next Obligation.
-  exists 1. intros ?. simpl. destruct a. lia.
-Qed.
-
-Definition simple_sortedb {A} r {total_order : TotalOrder r} :=
-  fix simple_sortedb (l : list A) :=
-    match l with
-    | [] => true
-    | [_] => true
-    | x :: ((y :: _) as l') => (@decide_binary_relation _ r _) x y && simple_sortedb l'
-    end.
-
-Definition simple_sortedb_cost {A} r {total_order : CostTotalOrder r} :=
-  ltac2:(
-    Cost.refine_compute_cost
-    [
-      (
-        (
-          '(
-            @decide_binary_relation
-            A
-            r
-            (@TotalOrder_DecidableBinaryRelation A r (@CostTotalOrder_TotalOrder A r total_order))
-          ),
-          2
-        ),
-        '(@cost_fun _ _ (@CostTotalOrder_cost _ _ total_order))
-      )
-    ]
-    1
-    (eval red in (@simple_sortedb A r (@CostTotalOrder_TotalOrder _ _ total_order)))
-    []
-  ).
-
-Theorem simple_sortedb_cost_linear_when_cost_constant_total_order :
-  forall {A} {r} (total_order : CostConstantTotalOrder r),
-  big_o
-    (simple_sortedb_cost r)
-    (fun (l : list A) => 1 + length l).
+Theorem list_forall_positive :
+  forall {A} f g (l : list A),
+  (forall a, (f a : Prop) -> (g a : Prop)) ->
+  list_forall f l -> list_forall g l.
 Proof.
-  intros ? ? ?. destruct total_order as (total_order & (c & H)). exists (18 + c). intros l. induction l.
-  - simpl. lia.
-  - simpl. destruct l.
-    + lia.
-    + rename a0 into b.
-      replace (let (_, _, _, _, _) := @CostTotalOrder_TotalOrder A r total_order in 1) with 1.
-      replace (let (CostTotalOrder_TotalOrder0, _) := total_order in 1) with 1.
-      * specialize (H (a, b)) as ?. simpl in H0.
-        unfold CostConstantTotalOrder_CostTotalOrder in IHl.
-        destruct (@decide_binary_relation _ r _ a b); lia.
-      * destruct total_order. auto.
-      * destruct total_order as (total_order & ?). destruct total_order. auto.
+  intros ? ? ? ? ? ?. induction l.
+  - auto.
+  - destruct H0 as (? & ?). split.
+    + auto.
+    + auto.
+Qed.
+
+Section Unused.
+
+Fixpoint list_in {A} a (l : list A) :=
+  match l with
+  | [] => False
+  | x :: l' => x = a \/ list_in a l'
+  end.
+
+End Unused.
+
+Inductive is_permutation {A} : list A -> list A -> Prop :=
+  | is_permutation_empty : is_permutation [] []
+  | is_permutation_add a l1 l2 : is_permutation l1 l2 -> is_permutation (a :: l1) (a :: l2)
+  | is_permutation_swap a b l : is_permutation (b :: a :: l) (a :: b :: l)
+  | is_permutation_trans l1 l2 l3 : is_permutation l1 l2 -> is_permutation l2 l3 -> is_permutation l1 l3.
+
+Section Example.
+
+Theorem is_permutation_example : is_permutation [5; 3; 1; 2; 4] [1; 2; 3; 4; 5].
+Proof.
+  apply is_permutation_trans with [5; 1; 3; 2; 4].
+  apply is_permutation_add.
+  apply is_permutation_swap.
+  apply is_permutation_trans with [1; 5; 3; 2; 4].
+  apply is_permutation_swap.
+  apply is_permutation_add.
+  apply is_permutation_trans with [5; 2; 3; 4].
+  apply is_permutation_add.
+  apply is_permutation_swap.
+  apply is_permutation_trans with [2; 5; 3; 4].
+  apply is_permutation_swap.
+  apply is_permutation_add.
+  apply is_permutation_trans with [3; 5; 4].
+  apply is_permutation_swap.
+  apply is_permutation_add.
+  apply is_permutation_swap.
+Qed.
+
+End Example.
+
+Theorem is_permutation_refl : forall {A} (l : list A), is_permutation l l.
+Proof.
+  induction l.
+  - apply is_permutation_empty.
+  - apply is_permutation_add. auto.
+Qed.
+
+Theorem is_permutation_sym : forall {A} (l1 l2 : list A), is_permutation l1 l2 -> is_permutation l2 l1.
+Proof.
+  intros ? ? ? ?. induction H.
+  - apply is_permutation_empty.
+  - apply is_permutation_add. auto.
+  - apply is_permutation_swap.
+  - apply is_permutation_trans with l2; auto.
+Qed.
+
+Theorem permutation_length : forall {A} (l1 l2 : list A), is_permutation l1 l2 -> length l2 = length l1.
+Proof.
+  intros ? ? ? ?. induction H; simpl; lia.
+Qed.
+
+Theorem list_forall_permutation :
+  forall {A} f (l1 l2 : list A),
+  is_permutation l1 l2 ->
+  list_forall f l1 -> list_forall f l2.
+Proof.
+  intros ? ? ? ? ?. induction H; intros ?.
+  - auto.
+  - destruct H0 as (? & ?). split; auto.
+  - destruct H as (? & ? & ?). repeat split; auto.
+  - auto.
 Qed.
