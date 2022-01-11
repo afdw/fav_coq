@@ -147,16 +147,15 @@ Ltac2 rec join_replace replacements a_constr b_constr :=
   end.
 
 Ltac2 rec compute_cost cost_functions depth input_constr :=
-  let try_builtin input_constr fallback :=
-    match List.assoc_opt (fun (a_constr, a_depth) (b_constr, b_depth) =>
-      Bool.and (Constr.equal a_constr b_constr) (Int.equal a_depth b_depth)
-    ) (input_constr, depth) cost_functions with
-    | Some result_constr => result_constr
-    | None => fallback ()
-    end in
   printf "Trace: compute_time _ %i %t" depth input_constr;
+  let pair_equal :=
+    (fun (a_constr, a_depth) (b_constr, b_depth) =>
+      Bool.and (Constr.equal a_constr b_constr) (Int.equal a_depth b_depth)
+    ) in
   let result_constr :=
-    try_builtin input_constr (fun () =>
+    match List.assoc_opt pair_equal (input_constr, depth) cost_functions with
+    | Some result_constr => result_constr
+    | None =>
       match Constr.Unsafe.kind input_constr with
       | Constr.Unsafe.Lambda _ _ => ()
       | Constr.Unsafe.Fix _ _ _ _ => ()
@@ -247,15 +246,44 @@ Ltac2 rec compute_cost cost_functions depth input_constr :=
             match Constr.Unsafe.kind fun_ with
             | Constr.Unsafe.Constructor _ _ => '1
             | _ =>
-              let cost_fun := compute_cost cost_functions (Array.length real_args) fun_ in
-              Constr.Unsafe.make (Constr.Unsafe.App cost_fun args)
+              let replaced_cost :=
+                List.fold_right
+                (fun i prev =>
+                  match prev with
+                  | None =>
+                    let to_be_replaced_fun :=
+                      let to_be_replaced_args := Array.sub args 0 i in
+                      Constr.Unsafe.make (Constr.Unsafe.App fun_ to_be_replaced_args) in
+                    match
+                      List.assoc_opt
+                      pair_equal
+                      (to_be_replaced_fun, Int.sub (Array.length args) i)
+                      cost_functions
+                    with
+                    | Some replaced_fun =>
+                      printf "Trace: compute_time found a replacement";
+                      let replaced_args := Array.sub args i (Int.sub (Array.length args) i) in
+                      Some (Constr.Unsafe.make (Constr.Unsafe.App replaced_fun replaced_args))
+                    | None => None
+                    end
+                  | Some cost => Some cost
+                  end
+                )
+                None
+                (List.mapi (fun i _ => i) (Array.to_list real_args)) in
+              match replaced_cost with
+              | None =>
+                let cost_fun := compute_cost cost_functions (Array.length args) fun_ in
+                Constr.Unsafe.make (Constr.Unsafe.App cost_fun args)
+              | Some cost => cost
+              end
             end in
         let args_costs := Array.map (compute_cost cost_functions 0) real_args in
         let args_cost := Array.fold_left cost_sum '0 args_costs in
         cost_sum fun_cost args_cost
       | _ => Control.throw Match_failure
       end
-    ) in
+    end in
   printf "Trace:            ^- %t" result_constr;
   result_constr.
 

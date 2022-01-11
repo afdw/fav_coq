@@ -1,5 +1,6 @@
 Load "Cost".
 
+Require Import Coq.Bool.Bool.
 Require Import Coq.ZArith.ZArith.
 Require Import Lia.
 
@@ -59,8 +60,11 @@ Definition big_o {A} f g :=
 Definition constant {A} f :=
   big_o f (fun (_ : A) => 1).
 
-Definition unary_cost_constant {A} {B} {fun_} (cost : Cost (Signature [A] B) fun_) :=
+Definition unary_cost_constant {A} {R} {fun_} (cost : Cost (Signature [A] R) fun_) :=
   constant (@cost_fun _ _ cost).
+
+Definition binary_cost_constant {A} {B} {R} {fun_} (cost : Cost (Signature [A; B] R) fun_) :=
+  constant (fun '(a, b) => (@cost_fun _ _ cost) a b).
 
 Definition length {A} :=
   fix length (l : list A) :=
@@ -71,9 +75,13 @@ Definition length {A} :=
 
 Definition length_cost {A} := ltac2:(Cost.refine_compute_cost [] 1 (eval red in (@length A)) []).
 
+Section Example.
+
 #[export] Instance length_Cost {A} : Cost (Signature [_] _) (@length A) := {
   cost_fun := length_cost;
 }.
+
+End Example.
 
 Theorem length_cost_linear :
   forall {A}, big_o length_cost (fun (l : list A) => 1 + length l).
@@ -134,3 +142,105 @@ Proof.
 Qed.
 
 End Example.
+
+Class DecidableBinaryRelation {A} (r : A -> A -> Prop) := {
+  decide_binary_relation : A -> A -> bool;
+  DecidableBinaryRelation_spec : forall a b, reflect (r a b) (decide_binary_relation a b);
+}.
+
+Class TotalOrder {A} (r : A -> A -> Prop) := {
+  TotalOrder_DecidableBinaryRelation :> DecidableBinaryRelation r;
+  TotalOrder_reflexivity : forall a, r a a;
+  TotalOrder_transitivity : forall a b c, r a b -> r b c -> r a c;
+  TotalOrder_antisymmetry : forall a b, r a b -> r b a -> a = b;
+  TotalOrder_totality : forall a b, r a b \/ r b a;
+}.
+
+Class CostTotalOrder {A} (r : A -> A -> Prop) := {
+  CostTotalOrder_TotalOrder :> TotalOrder r;
+  CostTotalOrder_cost : Cost (Signature [_; _] _) decide_binary_relation;
+}.
+
+Class CostConstantTotalOrder {A} (r : A -> A -> Prop) := {
+  CostConstantTotalOrder_CostTotalOrder :> CostTotalOrder r;
+  CostConstantTotalOrder_cost_constant : binary_cost_constant CostTotalOrder_cost;
+}.
+
+#[export, program] Instance nat_le_DecidableBinaryRelation : DecidableBinaryRelation Nat.le := {
+  decide_binary_relation := Nat.leb;
+}.
+Next Obligation.
+  apply Nat.leb_spec0.
+Qed.
+
+#[export, program] Instance nat_le_TotalOrder : TotalOrder Nat.le.
+Next Obligation.
+  lia.
+Qed.
+Next Obligation.
+  lia.
+Qed.
+Next Obligation.
+  lia.
+Qed.
+
+#[export, program] Instance nat_leb_Cost : Cost (Signature [_; _] _) Nat.leb := {
+  cost_fun := fun _ _ => 1;
+}.
+
+#[export, program] Instance nat_le_CostTotalOrder : CostTotalOrder Nat.le.
+
+#[export, program] Instance nat_le_CostConstantTotalOrder : CostConstantTotalOrder Nat.le.
+Next Obligation.
+  exists 1. intros ?. simpl. destruct a. lia.
+Qed.
+
+Definition simple_sortedb {A} r {total_order : TotalOrder r} :=
+  fix simple_sortedb (l : list A) :=
+    match l with
+    | [] => true
+    | [_] => true
+    | x :: ((y :: _) as l') => (@decide_binary_relation _ r _) x y && simple_sortedb l'
+    end.
+
+Definition simple_sortedb_cost {A} r {total_order : CostTotalOrder r} :=
+  ltac2:(
+    Cost.refine_compute_cost
+    [
+      (
+        (
+          '(
+            @decide_binary_relation
+            A
+            r
+            (@TotalOrder_DecidableBinaryRelation A r (@CostTotalOrder_TotalOrder A r total_order))
+          ),
+          2
+        ),
+        '(@cost_fun _ _ (@CostTotalOrder_cost _ _ total_order))
+      )
+    ]
+    1
+    (eval red in (@simple_sortedb A r (@CostTotalOrder_TotalOrder _ _ total_order)))
+    []
+  ).
+
+Theorem simple_sortedb_cost_linear_when_cost_constant_total_order :
+  forall {A} {r} (total_order : CostConstantTotalOrder r),
+  big_o
+    (simple_sortedb_cost r)
+    (fun (l : list A) => 1 + length l).
+Proof.
+  intros ? ? ?. destruct total_order as (total_order & (c & H)). exists (18 + c). intros l. induction l.
+  - simpl. lia.
+  - simpl. destruct l.
+    + lia.
+    + rename a0 into b.
+      replace (let (_, _, _, _, _) := @CostTotalOrder_TotalOrder A r total_order in 1) with 1.
+      replace (let (CostTotalOrder_TotalOrder0, _) := total_order in 1) with 1.
+      * specialize (H (a, b)) as ?. simpl in H0.
+        unfold CostConstantTotalOrder_CostTotalOrder in IHl.
+        destruct (@decide_binary_relation _ r _ a b); lia.
+      * destruct total_order. auto.
+      * destruct total_order as (total_order & ?). destruct total_order. auto.
+Qed.
