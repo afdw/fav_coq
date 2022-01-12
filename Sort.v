@@ -13,6 +13,22 @@ Class TotalOrder {A} (r : A -> A -> Prop) := {
   TotalOrder_totality : forall a b, r a b \/ r b a;
 }.
 
+#[export, program] Instance TotalOrder_HasDecidableEquality {A} (r : A -> A -> Prop)
+  {total_order : TotalOrder r} :@HasDecidableEquality A.
+Next Obligation.
+  exact ((@decide_binary_relation _ r _ X X0) && (@decide_binary_relation _ r _ X0 X)).
+Defined.
+Next Obligation.
+  unfold TotalOrder_HasDecidableEquality_obligation_1.
+  destruct (@DecidableBinaryRelation_spec _ r _ a b), (@DecidableBinaryRelation_spec _ r _ b a).
+  - apply ReflectT. apply (@TotalOrder_antisymmetry _ r _); auto.
+  - apply ReflectF. intros <-. auto.
+  - apply ReflectF. intros <-. auto.
+  - apply ReflectF. intros <-. apply n. apply (@TotalOrder_reflexivity _ r _).
+Qed.
+
+Print TotalOrder_HasDecidableEquality.
+
 Coercion TotalOrder_DecidableBinaryRelation : TotalOrder >-> DecidableBinaryRelation.
 
 Class CostTotalOrder {A} (r : A -> A -> Prop) := {
@@ -144,6 +160,66 @@ Qed.
 
 Definition is_sorter {A} r {total_order : TotalOrder r} f :=
   forall (l : list A), is_permutation (f l) l /\ sorted r (f l).
+
+Lemma sorted_equal_cons :
+  forall {A} r {total_order : TotalOrder r} a b (l1 l2 : list A),
+  sorted r (a :: l1) ->
+  sorted r (b :: l2) ->
+  is_permutation (a :: l1) (b :: l2) ->
+  a = b /\ is_permutation l1 l2.
+Proof.
+  intros ? ? ? a b l1 l2 ? ? ?.
+  destruct H as (? & ?), H0 as (? & ?). clear H2 H3.
+  assert (r a b). {
+    apply is_permutation_alt_is_permutation in H1.
+    inversion H1. subst a0 l4. destruct l0.
+    - simpl in H2. injection H2 as -> ->. apply TotalOrder_reflexivity.
+    - injection H2 as -> <-. apply list_forall_app in H. simpl in H. intuition auto.
+  }
+  assert (r b a). {
+    apply is_permutation_sym in H1. apply is_permutation_alt_is_permutation in H1.
+    inversion H1. subst a0 l4. destruct l0.
+    - simpl in H3. injection H3 as -> ->. apply TotalOrder_reflexivity.
+    - injection H3 as -> <-. apply list_forall_app in H0. simpl in H0. intuition auto.
+  }
+  assert (a = b) by (apply (@TotalOrder_antisymmetry _ r _); auto).
+  split.
+  - apply H4.
+  - subst b. apply is_permutation_alt'_is_permutation. apply permutation_alt'_same_head with a.
+    apply is_permutation_alt'_is_permutation. auto.
+Qed.
+
+Theorem sorted_equal :
+  forall {A} r {total_order : TotalOrder r} (l1 l2 : list A),
+  sorted r l1 ->
+  sorted r l2 ->
+  is_permutation l1 l2 ->
+  l1 = l2.
+Proof.
+  intros ? ? ? l1 l2 ? ? ?. generalize dependent l2. induction l1; intros l2 ? ?.
+  - symmetry. apply permutation_empty. apply is_permutation_sym. auto.
+  - destruct l2.
+    + apply permutation_empty. auto.
+    + rename a0 into b. specialize (sorted_equal_cons _ _ _ _ _ H H0 H1) as (? & ?). f_equal.
+      * auto.
+      * destruct H as (? & ?), H0 as (? & ?). apply IHl1; auto.
+Qed.
+
+Theorem sorter_fully_defined :
+  forall {A} r {total_order : TotalOrder r} f1 f2,
+  is_sorter r f1 ->
+  is_sorter r f2 ->
+  forall (l : list A), f1 l = f2 l.
+Proof.
+  unfold is_sorter. intros ? ? ? ? ? ? ? ?.
+  specialize (H l). specialize (H0 l). destruct H as (? & ?), H0 as (? & ?).
+  apply (sorted_equal r).
+  - auto.
+  - auto.
+  - apply is_permutation_trans with l.
+    + auto.
+    + apply is_permutation_sym. auto.
+Qed.
 
 Definition insert_sorted {A} r {total_order : TotalOrder r} :=
   fix insert_sorted a (l : list A) :=
