@@ -290,6 +290,20 @@ Proof.
     destruct (@DecidableBinaryRelation_spec _ r _ a b); lia.
 Qed.
 
+Theorem insert_sorted_cost_constant_on_cost_constant_total_order_and_first_place :
+  forall {A} r {total_order : CostConstantTotalOrder r},
+  {c : nat |
+    forall a (l : list A),
+    list_forall (fun b => r a b) l ->
+    insert_sorted_cost r a l <= c}.
+Proof.
+  intros ? ? ?. destruct total_order as (total_order & (c & H0)). exists (c + 21). intros a l ?. destruct l.
+  - simpl. lia.
+  - rename a0 into b. simpl. specialize (H0 (a, b)). destruct (@DecidableBinaryRelation_spec _ r _ a b).
+    + lia.
+    + simpl in H. intuition auto.
+Qed.
+
 Definition insertion_sort {A} r {total_order : TotalOrder r} :=
   fix insertion_sort (l : list A) :=
     match l with
@@ -341,6 +355,23 @@ Proof.
       in H
       by (apply permutation_length; apply insertion_sort_correct).
     lia.
+Qed.
+
+Theorem insertion_sort_cost_linear_on_cost_constant_total_order_and_list :
+  forall {A} r {total_order : CostConstantTotalOrder r},
+  {c : nat |
+    forall (l : list A),
+    sorted r l ->
+    insertion_sort_cost r l <= c * (1 + (length l))}.
+Proof.
+  intros ? ? ?. destruct (insert_sorted_cost_constant_on_cost_constant_total_order_and_first_place r) as (c & H).
+  exists (c + 10). intros l ?. induction l.
+  - simpl. lia.
+  - simpl in H0. destruct H0 as (? & ?). apply IHl in H1. clear IHl. simpl.
+    specialize (H a (insertion_sort r l)).
+    apply list_forall_permutation with (l2 := insertion_sort r l) in H0.
+    + apply H in H0. clear H. lia.
+    + apply is_permutation_sym. apply insertion_sort_correct.
 Qed.
 
 Section Example.
