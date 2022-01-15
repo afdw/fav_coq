@@ -13,22 +13,6 @@ Class TotalOrder {A} (r : A -> A -> Prop) := {
   TotalOrder_totality : forall a b, r a b \/ r b a;
 }.
 
-#[export, program] Instance TotalOrder_HasDecidableEquality {A} (r : A -> A -> Prop)
-  {total_order : TotalOrder r} :@HasDecidableEquality A.
-Next Obligation.
-  exact ((@decide_binary_relation _ r _ X X0) && (@decide_binary_relation _ r _ X0 X)).
-Defined.
-Next Obligation.
-  unfold TotalOrder_HasDecidableEquality_obligation_1.
-  destruct (@DecidableBinaryRelation_spec _ r _ a b), (@DecidableBinaryRelation_spec _ r _ b a).
-  - apply ReflectT. apply (@TotalOrder_antisymmetry _ r _); auto.
-  - apply ReflectF. intros <-. auto.
-  - apply ReflectF. intros <-. auto.
-  - apply ReflectF. intros <-. apply n. apply (@TotalOrder_reflexivity _ r _).
-Qed.
-
-Print TotalOrder_HasDecidableEquality.
-
 Coercion TotalOrder_DecidableBinaryRelation : TotalOrder >-> DecidableBinaryRelation.
 
 Class CostTotalOrder {A} (r : A -> A -> Prop) := {
@@ -185,8 +169,7 @@ Proof.
   assert (a = b) by (apply (@TotalOrder_antisymmetry _ r _); auto).
   split.
   - apply H4.
-  - subst b. apply is_permutation_alt'_is_permutation. apply permutation_alt'_same_head with a.
-    apply is_permutation_alt'_is_permutation. auto.
+  - subst b. apply permutation_same_head with a. auto.
 Qed.
 
 Theorem sorted_equal :
