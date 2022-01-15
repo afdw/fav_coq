@@ -64,34 +64,31 @@ Fixpoint sorted {A} r {total_order : TotalOrder r} (l : list A) :=
   | x :: l' => (list_forall (fun y => r x y) l') /\ sorted r l'
   end.
 
-Fixpoint locally_sorted {A} r {total_order : TotalOrder r} (l : list A) :=
-  match l with
-  | [] => True
-  | [_] => True
-  | x :: ((y :: _) as l') => r x y /\ locally_sorted r l'
-  end.
+Inductive locally_sorted {A} r {total_order : @TotalOrder A r} : list A -> Prop :=
+  | locally_sorted_empty : locally_sorted r []
+  | locally_sorted_single a : locally_sorted r [a]
+  | locally_sorted_next a b l : r a b -> locally_sorted r (b :: l) -> locally_sorted r (a :: b :: l).
 
 Theorem locally_sorted_iff_sorted :
-  forall {A} r {total_order : TotalOrder r} (l : list A),
-  locally_sorted r l <-> sorted r l.
-Proof.
-  intros ? ? ? ?. induction l.
-  - simpl. intuition auto.
-  - simpl. destruct l.
-    + simpl. intuition auto.
-    + rename a0 into b.
-      remember (locally_sorted r (b :: l)) as P. simpl. subst P.
-      split.
-      * intros (? & ?). specialize (proj1 IHl H0) as (? & ?). repeat split.
-        -- auto.
-        -- eapply list_forall_positive.
-           2: apply H1.
-           eauto using TotalOrder_transitivity.
-        -- auto.
-        -- auto.
-      * intros ((? & ?) & ? & ?). split.
-        -- auto.
-        -- apply IHl. simpl. auto.
+   forall {A} r {total_order : TotalOrder r} (l : list A),
+   locally_sorted r l <-> sorted r l.
+ Proof.
+  intros ? ? ? ?. split.
+  - intros ?. induction H.
+    + simpl. auto.
+    + simpl. auto.
+    + simpl. simpl in IHlocally_sorted. destruct IHlocally_sorted as (? & ?). repeat split.
+      * auto.
+      * eapply list_forall_positive.
+        2: apply H1.
+        eauto using TotalOrder_transitivity.
+      * auto.
+      * auto.
+  - intros ?. induction l.
+    + apply locally_sorted_empty.
+    + simpl in H. destruct H as (? & ?). specialize (IHl H0). destruct l.
+      * apply locally_sorted_single.
+      * simpl in H. apply locally_sorted_next; intuition auto.
 Qed.
 
 Definition locally_sortedb {A} r {total_order : TotalOrder r} :=
@@ -107,14 +104,17 @@ Theorem locally_sortedb_spec :
   reflect (locally_sorted r l) (locally_sortedb r l).
 Proof.
   intros ? ? ? ?. induction l.
-  - simpl. apply ReflectT. auto.
+  - simpl. apply ReflectT. apply locally_sorted_empty.
   - simpl. destruct l.
-    + apply ReflectT. auto.
-    + rename a0 into b.
-      destruct (@DecidableBinaryRelation_spec _ r _ a b); destruct IHl; constructor; intuition auto.
+    + apply ReflectT. apply locally_sorted_single.
+    + rename a0 into b. destruct (@DecidableBinaryRelation_spec _ r _ a b), IHl.
+      * apply ReflectT. apply locally_sorted_next; auto.
+      * apply ReflectF. intros ?. inversion H. auto.
+      * apply ReflectF. intros ?. inversion H. auto.
+      * apply ReflectF. intros ?. inversion H. auto.
 Qed.
 
-Definition locally_sortedb_cost {A} r {total_order : CostTotalOrder r} :=
+(*Definition simple_sortedb_cost {A} r {total_order : CostTotalOrder r} :=
   ltac2:(
     Cost.refine_compute_cost
     [
@@ -124,14 +124,14 @@ Definition locally_sortedb_cost {A} r {total_order : CostTotalOrder r} :=
       )
     ]
     1
-    (eval red in (@locally_sortedb A r total_order))
+    (eval red in (@simple_sortedb A r total_order))
     []
   ).
 
-Theorem locally_sortedb_cost_linear_on_cost_constant_total_order :
+Theorem simple_sortedb_cost_linear_on_cost_constant_total_order :
   forall {A} r {total_order : CostConstantTotalOrder r},
   big_o
-    (locally_sortedb_cost r)
+    (simple_sortedb_cost r)
     (fun (l : list A) => 1 + length l).
 Proof.
   intros ? ? ?. destruct total_order as (total_order & (c & H)). exists (c + 18). intros l. induction l.
@@ -140,10 +140,56 @@ Proof.
     + lia.
     + rename a0 into b. unfold CostConstantTotalOrder_CostTotalOrder in IHl.
       specialize (H (a, b)). simpl in H. lia.
-Qed.
+Qed.*)
 
 Definition is_sorter {A} r {total_order : TotalOrder r} f :=
   forall (l : list A), is_permutation (f l) l /\ sorted r (f l).
+
+Theorem sorted_equal :
+  forall {A} r {total_order : TotalOrder r} (l1 l2 : list A),
+  sorted r l1 ->
+  sorted r l2 ->
+  is_permutation l1 l2 ->
+  l1 = l2.
+Proof.
+  intros ? ? ? ? ? ? ? ?. rewrite <- locally_sorted_iff_sorted in H, H0.
+  generalize dependent l1. induction H0; intros l1 ? ?.
+  - inversion H; clear H; subst l1.
+    + auto.
+    + apply permutation_empty_inversion in H1. discriminate H1.
+    + apply permutation_empty_inversion in H1. discriminate H1.
+  - inversion H; clear H; subst l1.
+    + apply is_permutation_sym in H1. apply permutation_empty_inversion in H1. discriminate.
+    + apply permutation_single_inversion' in H1. subst a0. auto.
+    + apply permutation_single_inversion in H1. discriminate.
+  - inversion H1; clear H1; subst l1.
+    + apply is_permutation_sym in H2. apply permutation_empty_inversion in H2. discriminate.
+    + apply is_permutation_sym in H2. apply permutation_single_inversion in H2. discriminate.
+    + specialize (IHlocally_sorted (b0 :: l0) H4).
+
+  setoid_rewrite -> (locally_sorted_iff_sorted r).
+  intros ? ? ? l1 l2 ? ? ?. generalize dependent l1. induction H0; intros l1 ? ?.
+  - inversion H; clear H; subst l1.
+    + auto.
+    + apply permutation_empty_inversion in H1. discriminate H1.
+    + apply permutation_empty_inversion in H1. discriminate H1.
+  - inversion H; clear H; subst l1.
+    + apply is_permutation_sym in H1. apply permutation_empty_inversion in H1. discriminate.
+    + apply permutation_single_inversion' in H1. subst a0. auto.
+    + apply permutation_single_inversion in H1. discriminate.
+  - inversion H1; clear H1; subst l1.
+    + apply is_permutation_sym in H2. apply permutation_empty_inversion in H2. discriminate.
+    + apply is_permutation_sym in H2. apply permutation_single_inversion in H2. discriminate.
+    + specialize (IHsorted (b0 :: l0) H4).
+
+
+  - subst l1. apply is_permutation_alt_is_permutation in H1. inversion H1.
+  - subst l1. apply is_permutation_alt_is_permutation in H1. inversion H1. destruct l1; discriminate.
+  - subst l1.
+apply app_permutation_inversion with (l3 := []) (l4 := []) in H1. admit. apply permutation_same_head in H1.
+  intros ? ? ? l1 l2 ? ? ?. induction H; inversion H0.
+  - auto.
+  - subst l2. inversion H1. subst.
 
 Lemma sorted_equal_cons :
   forall {A} r {total_order : TotalOrder r} a b (l1 l2 : list A),
@@ -153,16 +199,23 @@ Lemma sorted_equal_cons :
   a = b /\ is_permutation l1 l2.
 Proof.
   intros ? ? ? a b l1 l2 ? ? ?.
-  assert (a = b). {
-    apply permutation_cons_inversion in H1. destruct H1 as [? | (? & ?)].
-    - auto.
-    - destruct H as (? & _), H0 as (? & _).
-      rewrite list_forall_list_in in H. rewrite list_forall_list_in in H0.
-      apply H in H2; clear H. apply H0 in H1; clear H0. apply (@TotalOrder_antisymmetry _ r _); auto.
+  destruct H as (? & ?), H0 as (? & ?). clear H2 H3.
+  assert (r a b). {
+    apply is_permutation_alt_is_permutation in H1.
+    inversion H1. subst a0 l4. destruct l0.
+    - simpl in H2. injection H2 as -> ->. apply TotalOrder_reflexivity.
+    - injection H2 as -> <-. apply list_forall_app in H. simpl in H. intuition auto.
   }
+  assert (r b a). {
+    apply is_permutation_sym in H1. apply is_permutation_alt_is_permutation in H1.
+    inversion H1. subst a0 l4. destruct l0.
+    - simpl in H3. injection H3 as -> ->. apply TotalOrder_reflexivity.
+    - injection H3 as -> <-. apply list_forall_app in H0. simpl in H0. intuition auto.
+  }
+  assert (a = b) by (apply (@TotalOrder_antisymmetry _ r _); auto).
   split.
-  - apply H2.
-  - subst b. apply permutation_same_head_inversion in H1. auto.
+  - apply H4.
+  - subst b. apply permutation_same_head with a. auto.
 Qed.
 
 Theorem sorted_equal :
@@ -178,7 +231,7 @@ Proof.
     + apply permutation_empty. auto.
     + rename a0 into b. specialize (sorted_equal_cons _ _ _ _ _ H H0 H1) as (? & ?). f_equal.
       * auto.
-      * destruct H as (_ & ?), H0 as (_ & ?). apply IHl1; auto.
+      * destruct H as (? & ?), H0 as (? & ?). apply IHl1; auto.
 Qed.
 
 Theorem sorter_fully_defined :

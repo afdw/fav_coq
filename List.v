@@ -279,6 +279,11 @@ Proof.
   - simpl. f_equal. auto.
 Qed.
 
+Theorem app_empty_inversion : forall {A} (l1 l2 : list A), l1 ++ l2 = [] -> l1 = [] /\ l2 = [].
+Proof.
+  intros ? ? ? ?. destruct l1, l2; auto; discriminate.
+Qed.
+
 Theorem list_in_app : forall {A} a (l1 l2 : list A), list_in a (l1 ++ l2) <-> list_in a l1 \/ list_in a l2.
 Proof.
   intros ? a l1 l2. induction l1.
@@ -291,6 +296,13 @@ Theorem list_forall_app :
   list_forall f (l1 ++ l2) <-> list_forall f l1 /\ list_forall f l2.
 Proof.
   setoid_rewrite list_forall_list_in. setoid_rewrite list_in_app. intuition auto.
+Qed.
+
+Theorem list_in_insert : forall {A} a (l1 l2 : list A), list_in a (l1 ++ a :: l2).
+Proof.
+  intros ? ? ? ?. induction l1.
+  - simpl. intuition auto.
+  - simpl. intuition auto.
 Qed.
 
 Section Unused.
@@ -458,19 +470,70 @@ Proof.
     + clear H H0. apply is_permutation_alt_trans with l2; auto.
 Qed.
 
-Theorem permutation_same_head :
+Theorem permutation_same_head_inversion :
   forall {A} a (l1 l2 : list A),
   is_permutation (a :: l1) (a :: l2) ->
   is_permutation l1 l2.
 Proof.
   setoid_rewrite <- is_permutation_alt_is_permutation.
-  intros ? a l1 l2 ?. remember (a :: l1) as l3. remember (a :: l2) as l4.
-  generalize dependent l2. generalize dependent l1. generalize dependent a.
-  induction H; intros a_ l2_ Heql3 l1_ Heql4.
-  * discriminate.
-  * injection Heql4 as <- <-. destruct l1.
-    -- injection Heql3 as <-. auto.
-    -- injection Heql3 as -> <-. apply is_permutation_alt_trans with (a :: l1 ++ l2).
-       ++ apply is_permutation_alt_insert. apply is_permutation_alt_refl.
-       ++ auto.
+  intros ? ? ? ? ?. inversion H. subst a0 l4. destruct l0.
+  - injection H0 as ->. auto.
+  - injection H0 as -> <-. apply is_permutation_alt_trans with (a  :: l0 ++ l3).
+    + apply is_permutation_alt_move. apply is_permutation_alt_refl.
+    + auto.
+Qed.
+
+Theorem app_permutation_inversion :
+  forall {A} (l1 l2 l3 l4 : list A),
+  is_permutation (l1 ++ l3) (l2 ++ l4) ->
+  is_permutation l1 l2 ->
+  is_permutation l3 l4.
+Proof.
+  setoid_rewrite <- is_permutation_alt_is_permutation.
+  intros ? ? ? ? ? ? ?. generalize dependent l4. generalize dependent l3. induction H0; intros l3_ l4_ ?.
+  - auto.
+  - rewrite app_assoc in H. simpl in H.
+    apply is_permutation_alt_sym in H. apply is_permutation_alt_move in H. apply is_permutation_alt_sym in H.
+    apply is_permutation_alt_is_permutation in H. apply permutation_same_head_inversion in H.
+    apply is_permutation_alt_is_permutation in H. apply IHis_permutation_alt. rewrite app_assoc. auto.
+Qed.
+
+Theorem permutation_empty_inversion :
+  forall {A} (l : list A),
+  is_permutation l [] ->
+  l = [].
+Proof.
+  setoid_rewrite <- is_permutation_alt_is_permutation.
+  intros ? ? ?. inversion H. auto.
+Qed.
+
+Theorem permutation_single_inversion :
+  forall {A} a (l : list A),
+  is_permutation l [a] ->
+  l = [a].
+Proof.
+  setoid_rewrite <- is_permutation_alt_is_permutation.
+  intros ? ? ? ?. inversion H. subst a0 l3. rewrite is_permutation_alt_is_permutation in H2.
+  apply permutation_empty_inversion in H2. apply app_empty_inversion in H2. destruct H2 as (-> & ->). auto.
+Qed.
+
+Theorem permutation_single_inversion' :
+  forall {A} (a b : A),
+  is_permutation [a] [b] ->
+  a = b.
+Proof.
+  intros ? ? ? ?. apply permutation_single_inversion in H. injection H as ->. auto.
+Qed.
+
+Theorem permutation_cons_inversion :
+  forall {A} a b (l1 l2 : list A),
+  is_permutation (a :: l1) (b :: l2) ->
+  a = b \/ list_in a l2 /\ list_in b l1.
+Proof.
+  setoid_rewrite <- is_permutation_alt_is_permutation.
+  intros ? ? ? ? ? ?. inversion H. subst a0 l4. destruct l0.
+  - injection H0 as -> ->. left. auto.
+  - injection H0 as -> <-. right. split.
+    + apply is_permutation_alt_sym in H2. inversion H2. subst a0 l5. apply list_in_insert.
+    + apply list_in_insert.
 Qed.
