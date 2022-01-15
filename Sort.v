@@ -5,6 +5,9 @@ Class DecidableBinaryRelation {A} (r : A -> A -> Prop) := {
   DecidableBinaryRelation_spec : forall a b, reflect (r a b) (decide_binary_relation a b);
 }.
 
+Arguments decide_binary_relation {A}%type_scope r%function_scope {DecidableBinaryRelation} _ _.
+Arguments DecidableBinaryRelation_spec {A}%type_scope r%function_scope {DecidableBinaryRelation} _ _.
+
 Class TotalOrder {A} (r : A -> A -> Prop) := {
   TotalOrder_DecidableBinaryRelation :> DecidableBinaryRelation r;
   TotalOrder_reflexivity : forall a, r a a;
@@ -14,20 +17,26 @@ Class TotalOrder {A} (r : A -> A -> Prop) := {
 }.
 
 Coercion TotalOrder_DecidableBinaryRelation : TotalOrder >-> DecidableBinaryRelation.
+Arguments TotalOrder_reflexivity {A}%type_scope r%function_scope {TotalOrder} _.
+Arguments TotalOrder_transitivity {A}%type_scope r%function_scope {TotalOrder} _ _ _ _ _.
+Arguments TotalOrder_antisymmetry {A}%type_scope r%function_scope {TotalOrder} _ _ _ _.
+Arguments TotalOrder_totality {A}%type_scope r%function_scope {TotalOrder} _ _.
 
 Class CostTotalOrder {A} (r : A -> A -> Prop) := {
   CostTotalOrder_TotalOrder :> TotalOrder r;
-  CostTotalOrder_cost : Cost (Signature [_; _] _) decide_binary_relation;
+  CostTotalOrder_cost : Cost (Signature [_; _] _) (decide_binary_relation r);
 }.
 
 Coercion CostTotalOrder_TotalOrder : CostTotalOrder >-> TotalOrder.
+Arguments CostTotalOrder_cost {A}%type_scope r%function_scope {CostTotalOrder}.
 
 Class CostConstantTotalOrder {A} (r : A -> A -> Prop) := {
   CostConstantTotalOrder_CostTotalOrder :> CostTotalOrder r;
-  CostConstantTotalOrder_cost_constant : binary_cost_constant CostTotalOrder_cost;
+  CostConstantTotalOrder_cost_constant : binary_cost_constant (CostTotalOrder_cost r);
 }.
 
 Coercion CostConstantTotalOrder_CostTotalOrder : CostConstantTotalOrder >-> CostTotalOrder.
+Arguments CostConstantTotalOrder_cost_constant {A}%type_scope r%function_scope {CostConstantTotalOrder}.
 
 #[export, program] Instance nat_le_DecidableBinaryRelation : DecidableBinaryRelation Nat.le := {
   decide_binary_relation := Nat.leb;
@@ -86,7 +95,7 @@ Proof.
         -- auto.
         -- eapply list_forall_positive.
            2: apply H1.
-           eauto using TotalOrder_transitivity.
+           eauto using (TotalOrder_transitivity r).
         -- auto.
         -- auto.
       * intros ((? & ?) & ? & ?). split.
@@ -99,7 +108,7 @@ Definition locally_sortedb {A} r {total_order : TotalOrder r} :=
     match l with
     | [] => true
     | [_] => true
-    | x :: ((y :: _) as l') => (@decide_binary_relation _ r _) x y && locally_sortedb l'
+    | x :: ((y :: _) as l') => decide_binary_relation r x y && locally_sortedb l'
     end.
 
 Theorem locally_sortedb_spec :
@@ -111,7 +120,7 @@ Proof.
   - simpl. destruct l.
     + apply ReflectT. auto.
     + rename a0 into b.
-      destruct (@DecidableBinaryRelation_spec _ r _ a b); destruct IHl; constructor; intuition auto.
+      destruct (DecidableBinaryRelation_spec r a b); destruct IHl; constructor; intuition auto.
 Qed.
 
 Definition locally_sortedb_cost {A} r {total_order : CostTotalOrder r} :=
@@ -158,7 +167,7 @@ Proof.
     - auto.
     - destruct H as (? & _), H0 as (? & _).
       rewrite list_forall_list_in in H. rewrite list_forall_list_in in H0.
-      apply H in H2; clear H. apply H0 in H1; clear H0. apply (@TotalOrder_antisymmetry _ r _); auto.
+      apply H in H2; clear H. apply H0 in H1; clear H0. apply (TotalOrder_antisymmetry r); auto.
   }
   split.
   - apply H2.
@@ -202,7 +211,7 @@ Definition insert_sorted {A} r {total_order : TotalOrder r} :=
     match l with
     | [] => [a]
     | x :: l' =>
-      if (@decide_binary_relation _ r _) a x
+      if decide_binary_relation r a x
       then a :: x :: l'
       else x :: (insert_sorted a l')
     end.
@@ -217,14 +226,14 @@ Proof.
     + apply is_permutation_add. apply is_permutation_empty.
     + auto.
   - rename a0 into b. destruct H as (? & ?). apply IHl in H0 as ?. destruct H1 as (? & ?).
-    simpl. destruct (@DecidableBinaryRelation_spec _ r _ a b).
+    simpl. destruct (DecidableBinaryRelation_spec r a b).
     + split.
       * apply is_permutation_refl.
       * simpl. repeat split.
         -- auto.
         -- eapply list_forall_positive.
            2: apply H.
-           eauto using TotalOrder_transitivity.
+           eauto using (TotalOrder_transitivity r).
         -- auto.
         -- auto.
     + split.
@@ -235,7 +244,7 @@ Proof.
         -- apply list_forall_permutation with (a :: l).
            ++ apply is_permutation_sym. auto.
            ++ simpl. split.
-              ** destruct (@TotalOrder_totality _ r _ a b); intuition auto.
+              ** destruct (TotalOrder_totality r a b); intuition auto.
               ** auto.
         -- auto.
 Qed.
@@ -263,7 +272,7 @@ Proof.
   intros ? ? ?. destruct total_order as (total_order & (c & H)). exists (c + 19). intros (a, l). induction l.
   - simpl. lia.
   - rename a0 into b. unfold CostConstantTotalOrder_CostTotalOrder in IHl. simpl. specialize (H (a, b)).
-    destruct (@DecidableBinaryRelation_spec _ r _ a b); lia.
+    destruct (DecidableBinaryRelation_spec r a b); lia.
 Qed.
 
 Theorem insert_sorted_cost_constant_on_cost_constant_total_order_and_first_place :
@@ -276,7 +285,7 @@ Theorem insert_sorted_cost_constant_on_cost_constant_total_order_and_first_place
 Proof.
   intros ? ? ?. destruct total_order as (total_order & (c & H0)). exists (c + 21). intros ((a, l), H). destruct l.
   - simpl. lia.
-  - rename a0 into b. simpl. specialize (H0 (a, b)). destruct (@DecidableBinaryRelation_spec _ r _ a b).
+  - rename a0 into b. simpl. specialize (H0 (a, b)). destruct (DecidableBinaryRelation_spec r a b).
     + lia.
     + simpl in H. intuition auto.
 Qed.
