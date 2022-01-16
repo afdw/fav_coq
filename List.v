@@ -55,6 +55,8 @@ Class Cost s (fun_ : signature_to_fun_type s) := {
   cost_fun: signature_to_cost_fun_type s;
 }.
 
+Arguments cost_fun {s} fun_ {Cost}.
+
 Definition big_o {A} f g :=
   {c : nat | forall (a : A), f a <= c * (g a)}.
 
