@@ -115,6 +115,13 @@ Proof.
   - simpl. auto.
 Qed.
 
+Theorem length_filter_lt : forall {A} (l : list A) f, length (filter f l) <= length l.
+Proof.
+  intros ? ? ?. induction l.
+  - auto.
+  - simpl. destruct (f a); simpl; lia.
+Qed.
+
 Theorem list_in_app : forall {A} a (l1 l2 : list A), list_in a (l1 ++ l2) <-> list_in a l1 \/ list_in a l2.
 Proof.
   intros ? a l1 l2. induction l1.

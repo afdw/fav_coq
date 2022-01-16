@@ -43,6 +43,8 @@ Definition unary_cost_constant {A} {R} {fun_} (cost : Cost (Signature [A] R) fun
 Definition binary_cost_constant {A} {B} {R} {fun_} (cost : Cost (Signature [A; B] R) fun_) :=
   constant (fun '(a, b) => (@cost_fun _ _ cost) a b).
 
+Definition app_cost := ltac2:(Cost.refine_compute_cost [] 3 '@app []).
+
 Definition length_cost {A} := ltac2:(Cost.refine_compute_cost [] 1 (eval red in (@length A)) []).
 
 Section Example.

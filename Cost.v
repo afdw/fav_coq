@@ -26,6 +26,47 @@ Module Cost.
 Ltac2 cost_sum a_cost b_cost :=
   Constr.Unsafe.make (Constr.Unsafe.App 'plus (Array.of_list ([a_cost; b_cost]))).
 
+Ltac2 add_const_to_cost_fun cost_fun additional_cost depth :=
+  let rec sum_fun depth :=
+    if Int.equal depth 0
+    then
+      Constr.Unsafe.make (
+        Constr.Unsafe.Lambda
+        (Constr.Binder.make (Some @x) '(_ : Type))
+        (Constr.Unsafe.make (
+          Constr.Unsafe.Lambda
+          (Constr.Binder.make (Some @y) '(_ : Type))
+          (cost_sum (Constr.Unsafe.make (Constr.Unsafe.Rel 2)) (Constr.Unsafe.make (Constr.Unsafe.Rel 1)))
+        ))
+      )
+    else
+      Constr.Unsafe.make (
+        Constr.Unsafe.Lambda
+        (Constr.Binder.make (Some @x) '(_ : Type))
+        (Constr.Unsafe.make (
+          Constr.Unsafe.Lambda
+          (Constr.Binder.make (Some @y) '(_ : Type))
+          (Constr.Unsafe.make (
+            Constr.Unsafe.Lambda
+            (Constr.Binder.make (Some @z) '(_ : Type))
+            (Constr.Unsafe.make (
+              Constr.Unsafe.App
+              (sum_fun (Int.sub depth 1))
+              (Array.of_list [
+                Constr.Unsafe.make (
+                  Constr.Unsafe.App
+                  (Constr.Unsafe.make (Constr.Unsafe.Rel 3))
+                  (Array.of_list [Constr.Unsafe.make (Constr.Unsafe.Rel 1)])
+                );
+                Constr.Unsafe.make (Constr.Unsafe.Rel 2)
+              ])
+            ))
+          ))
+        ))
+      )
+    in
+  Constr.Unsafe.make (Constr.Unsafe.App (sum_fun depth) (Array.of_list ([cost_fun; additional_cost]))).
+
 Ltac2 rec count_lambda_depth constr :=
   match Constr.Unsafe.kind constr with
   | Constr.Unsafe.Lambda args body => Int.add (count_lambda_depth body) 1
@@ -98,6 +139,17 @@ Ltac2 rec join_replace replacements a_constr b_constr :=
       )
     | _ => Control.throw Match_failure
     end
+  | Constr.Unsafe.Sort _ => a_constr
+  | Constr.Unsafe.Prod arg a_u =>
+    match Constr.Unsafe.kind b_constr with
+    | Constr.Unsafe.Prod _ b_u =>
+      Constr.Unsafe.make (
+        Constr.Unsafe.Prod
+        arg
+        (join_replace replacements a_u b_u)
+      )
+    | _ => Control.throw Match_failure
+    end
   | Constr.Unsafe.Lambda arg a_body =>
     match Constr.Unsafe.kind b_constr with
     | Constr.Unsafe.Lambda arg b_body =>
@@ -105,6 +157,17 @@ Ltac2 rec join_replace replacements a_constr b_constr :=
         Constr.Unsafe.Lambda
         arg
         (join_replace replacements a_body b_body)
+      )
+    | _ => Control.throw Match_failure
+    end
+  | Constr.Unsafe.LetIn b a_t a_c =>
+    match Constr.Unsafe.kind b_constr with
+    | Constr.Unsafe.LetIn b b_t b_c =>
+      Constr.Unsafe.make (
+        Constr.Unsafe.LetIn
+        b
+        (join_replace replacements a_t b_t)
+        (join_replace replacements a_c b_c)
       )
     | _ => Control.throw Match_failure
     end
@@ -166,6 +229,7 @@ Ltac2 rec compute_cost cost_functions depth input_constr :=
     | None =>
       match Constr.Unsafe.kind input_constr with
       | Constr.Unsafe.Lambda _ _ => ()
+      | Constr.Unsafe.App _ _ => ()
       | Constr.Unsafe.Fix _ _ _ _ => ()
       | Constr.Unsafe.Constant _ _ => ()
       | _ =>
@@ -177,13 +241,20 @@ Ltac2 rec compute_cost cost_functions depth input_constr :=
       | Constr.Unsafe.Rel _ => '1
       | Constr.Unsafe.Var _ => '1
       | Constr.Unsafe.Evar _ _ => printf "Warning: compute_time assumes that evars are constant-time"; '1
+      | Constr.Unsafe.Sort _ => '1
+      | Constr.Unsafe.Prod _ _ => '1
       | Constr.Unsafe.Lambda arg body =>
         if Int.equal depth 0
         then '1
         else
           let body_cost := compute_cost cost_functions (Int.sub depth 1) body in
           Constr.Unsafe.make (Constr.Unsafe.Lambda arg body_cost)
+      | Constr.Unsafe.LetIn b t c =>
+        let t_cost := compute_cost cost_functions 0 t in
+        let c_cost := Constr.Unsafe.make (Constr.Unsafe.LetIn b t (compute_cost cost_functions 0 c)) in
+        cost_sum t_cost c_cost
       | Constr.Unsafe.Constructor _ _ => '1
+      | Constr.Unsafe.Ind _ _ => '1
       | Constr.Unsafe.Case ci c iv t bl =>
         let t_cost := compute_cost cost_functions 0 t in
         let c_replacement := match Constr.Unsafe.kind c with
@@ -196,13 +267,13 @@ Ltac2 rec compute_cost cost_functions depth input_constr :=
           printf "Warning: compute_time can not handle match with CaseInvert; what it even means?"
         end;
         let bl_costs := Array.map (fun b =>
-          compute_cost cost_functions (count_lambda_depth b) b
+          compute_cost cost_functions (Int.add depth (count_lambda_depth b)) b
         ) bl in
         let branches_cost :=
           if Array.for_all is_constant_one bl_costs
           then '1
           else Constr.Unsafe.make (Constr.Unsafe.Case ci c_replacement iv t bl_costs) in
-        cost_sum t_cost branches_cost
+        add_const_to_cost_fun t_cost branches_cost depth
       | Constr.Unsafe.Fix recs i nas cs =>
         let nas_replacements := Array.mapi (fun j binder =>
           Constr.Binder.make
@@ -255,6 +326,7 @@ Ltac2 rec compute_cost cost_functions depth input_constr :=
             end
           else
             match Constr.Unsafe.kind fun_ with
+            | Constr.Unsafe.Ind _ _ => '1
             | Constr.Unsafe.Constructor _ _ => '1
             | _ =>
               let replaced_cost :=
@@ -284,14 +356,14 @@ Ltac2 rec compute_cost cost_functions depth input_constr :=
                 (List.mapi (fun i _ => i) (Array.to_list real_args)) in
               match replaced_cost with
               | None =>
-                let cost_fun := compute_cost cost_functions (Array.length args) fun_ in
+                let cost_fun := compute_cost cost_functions (Int.add depth (Array.length args)) fun_ in
                 Constr.Unsafe.make (Constr.Unsafe.App cost_fun args)
               | Some cost => cost
               end
             end in
         let args_costs := Array.map (compute_cost cost_functions 0) real_args in
         let args_cost := Array.fold_left cost_sum '0 args_costs in
-        cost_sum fun_cost args_cost
+        add_const_to_cost_fun fun_cost args_cost depth
       | _ => Control.throw Match_failure
       end
     end in
