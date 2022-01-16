@@ -51,6 +51,12 @@ Definition filter {A} (predicate : A -> bool) :=
       else filter l'
     end.
 
+Fixpoint rev {A} (l : list A) :=
+  match l with
+  | [] => []
+  | x :: l' => rev l' ++ [x]
+  end.
+
 Fixpoint list_forall {A} f (l : list A) :=
   match l with
   | [] => True
@@ -97,7 +103,7 @@ Proof.
   - simpl. f_equal. auto.
 Qed.
 
-Theorem app_empty_inversion : forall {A} (l1 l2 : list A), l1 ++ l2 = [] -> l1 = [] /\ l2 = [].
+Theorem app_nil_inversion : forall {A} (l1 l2 : list A), l1 ++ l2 = [] -> l1 = [] /\ l2 = [].
 Proof.
   intros ? ? ? ?. destruct l1, l2; auto; discriminate.
 Qed.

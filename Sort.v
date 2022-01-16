@@ -126,14 +126,14 @@ Proof.
 Qed.
 
 Definition is_sorter {A} r {total_order : TotalOrder r} f :=
-  forall (l : list A), is_permutation (f l) l /\ sorted r (f l).
+  forall (l : list A), permutation (f l) l /\ sorted r (f l).
 
 Lemma sorted_equal_cons :
   forall {A} r {total_order : TotalOrder r} a b (l1 l2 : list A),
   sorted r (a :: l1) ->
   sorted r (b :: l2) ->
-  is_permutation (a :: l1) (b :: l2) ->
-  a = b /\ is_permutation l1 l2.
+  permutation (a :: l1) (b :: l2) ->
+  a = b /\ permutation l1 l2.
 Proof.
   intros ? ? ? a b l1 l2 ? ? ?.
   assert (a = b). {
@@ -152,13 +152,13 @@ Theorem sorted_equal :
   forall {A} r {total_order : TotalOrder r} (l1 l2 : list A),
   sorted r l1 ->
   sorted r l2 ->
-  is_permutation l1 l2 ->
+  permutation l1 l2 ->
   l1 = l2.
 Proof.
   intros ? ? ? l1 l2 ? ? ?. generalize dependent l2. induction l1; intros l2 ? ?.
-  - symmetry. apply permutation_empty_inversion. apply is_permutation_sym. auto.
+  - symmetry. apply permutation_nil_inversion. apply permutation_sym. auto.
   - destruct l2.
-    + apply permutation_empty_inversion. auto.
+    + apply permutation_nil_inversion. auto.
     + rename a0 into b. specialize (sorted_equal_cons _ _ _ _ _ H H0 H1) as (? & ?). f_equal.
       * auto.
       * destruct H as (_ & ?), H0 as (_ & ?). apply IHl1; auto.
@@ -175,9 +175,9 @@ Proof.
   apply (sorted_equal r).
   - auto.
   - auto.
-  - apply is_permutation_trans with l.
+  - apply permutation_trans with l.
     + auto.
-    + apply is_permutation_sym. auto.
+    + apply permutation_sym. auto.
 Qed.
 
 Definition insert_sorted_impl {A} rb :=
@@ -199,16 +199,16 @@ Theorem insert_sorted_correct :
     {rb} {decidable_binary_relation : DecidableBinaryRelation r rb}
     a (l : list A),
   sorted r l ->
-  is_permutation (insert_sorted r a l) (a :: l) /\ sorted r (insert_sorted r a l).
+  permutation (insert_sorted r a l) (a :: l) /\ sorted r (insert_sorted r a l).
 Proof.
   intros ? ? ? ? ? ? ? ?. induction l.
   - simpl. split.
-    + apply is_permutation_add. apply is_permutation_empty.
+    + apply permutation_refl.
     + auto.
-  - rename a0 into b. destruct H as (? & ?). apply IHl in H0 as ?. destruct H1 as (? & ?).
+  - rename a0 into b. destruct H as (? & ?). apply IHl in H0 as ?; clear IHl. destruct H1 as (? & ?).
     simpl. destruct (DecidableBinaryRelation_spec r a b).
     + split.
-      * apply is_permutation_refl.
+      * apply permutation_refl.
       * simpl. repeat split.
         -- auto.
         -- eapply list_forall_positive.
@@ -217,12 +217,12 @@ Proof.
         -- auto.
         -- auto.
     + split.
-      * apply is_permutation_trans with (b :: a :: l).
-        -- apply is_permutation_add. auto.
-        -- apply is_permutation_swap.
+      * apply permutation_trans with (b :: a :: l).
+        -- apply permutation_cons. auto.
+        -- apply permutation_swap. apply permutation_refl.
       * simpl. split.
         -- apply list_forall_permutation with (a :: l).
-           ++ apply is_permutation_alt_sym. apply is_permutation_alt_is_permutation. auto.
+           ++ apply permutation_sym. auto.
            ++ simpl. split.
               ** destruct (TotalOrder_totality r a b); intuition auto.
               ** auto.
@@ -287,13 +287,13 @@ Theorem insertion_sort_correct :
   is_sorter r (insertion_sort r).
 Proof.
   unfold is_sorter. intros ? ? ? ? ? ?. induction l.
-  - simpl. auto using is_permutation_empty.
+  - simpl. auto using permutation_nil.
   - simpl. destruct IHl as (IHl1 & IHl2).
     specialize (insert_sorted_correct _ a _ IHl2) as (? & ?).
     split.
-    + apply is_permutation_trans with (a :: (insertion_sort r l)).
+    + apply permutation_trans with (a :: (insertion_sort r l)).
       * auto.
-      * apply is_permutation_add. auto.
+      * apply permutation_cons. auto.
     + auto.
 Qed.
 
@@ -343,7 +343,7 @@ Proof.
   - simpl in H1. destruct H1 as (? & ?). apply IHl in H2; clear IHl. simpl.
     apply list_forall_permutation with (l2 := insertion_sort_impl rb l) in H1.
     + specialize (H0 ltac:(exists (a, (insertion_sort_impl rb l)); auto)). simpl in H0. lia.
-    + apply is_permutation_alt_sym. apply is_permutation_alt_is_permutation. apply (insertion_sort_correct r).
+    + apply permutation_sym. apply (insertion_sort_correct r).
 Qed.
 
 Section Example.
