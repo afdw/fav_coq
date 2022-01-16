@@ -1,4 +1,4 @@
-Load List.
+Load Permutation.
 
 Class DecidableBinaryRelation {A} (r : A -> A -> Prop) (rb : A -> A -> bool) := {
   DecidableBinaryRelation_spec : forall a b, reflect (r a b) (rb a b);
@@ -156,9 +156,9 @@ Theorem sorted_equal :
   l1 = l2.
 Proof.
   intros ? ? ? l1 l2 ? ? ?. generalize dependent l2. induction l1; intros l2 ? ?.
-  - symmetry. apply permutation_empty. apply is_permutation_sym. auto.
+  - symmetry. apply permutation_empty_inversion. apply is_permutation_sym. auto.
   - destruct l2.
-    + apply permutation_empty. auto.
+    + apply permutation_empty_inversion. auto.
     + rename a0 into b. specialize (sorted_equal_cons _ _ _ _ _ H H0 H1) as (? & ?). f_equal.
       * auto.
       * destruct H as (_ & ?), H0 as (_ & ?). apply IHl1; auto.
@@ -222,7 +222,7 @@ Proof.
         -- apply is_permutation_swap.
       * simpl. split.
         -- apply list_forall_permutation with (a :: l).
-           ++ apply is_permutation_sym. auto.
+           ++ apply is_permutation_alt_sym. apply is_permutation_alt_is_permutation. auto.
            ++ simpl. split.
               ** destruct (TotalOrder_totality r a b); intuition auto.
               ** auto.
@@ -343,7 +343,7 @@ Proof.
   - simpl in H1. destruct H1 as (? & ?). apply IHl in H2; clear IHl. simpl.
     apply list_forall_permutation with (l2 := insertion_sort_impl rb l) in H1.
     + specialize (H0 ltac:(exists (a, (insertion_sort_impl rb l)); auto)). simpl in H0. lia.
-    + apply is_permutation_sym. apply (insertion_sort_correct r).
+    + apply is_permutation_alt_sym. apply is_permutation_alt_is_permutation. apply (insertion_sort_correct r).
 Qed.
 
 Section Example.
