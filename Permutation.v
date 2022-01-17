@@ -83,6 +83,11 @@ Proof.
   - replace (a :: l) with ([] ++ a :: l) by auto. apply permutation_insert. auto.
 Qed.
 
+Theorem permutation_refl_long : forall {A} (l1 l2 : list A), l1 = l2 -> permutation l1 l2.
+Proof.
+  intros ? ? ? ->. apply permutation_refl.
+Qed.
+
 Lemma app_insert_split :
   forall {A} a (l1 l2 l3 l4 : list A),
   l1 ++ l2 = l3 ++ a :: l4 ->
@@ -161,6 +166,16 @@ Proof.
       apply permutation_insert. simpl. auto.
 Qed.
 
+Lemma permutation_move_back :
+  forall {A} a (l1 l2 l3 : list A),
+  permutation l1 (a :: l2 ++ l3) ->
+  permutation l1 (l2 ++ a :: l3).
+Proof.
+  intros ? ? ? ? ? ?. apply permutation_trans with (a :: l2 ++ l3).
+  - auto.
+  - apply permutation_sym. apply permutation_move. apply permutation_refl.
+Qed.
+
 Theorem permutation_cons :
   forall {A} a (l1 l2 : list A),
   permutation l1 l2 ->
@@ -220,6 +235,22 @@ Proof.
     rewrite list_forall_app in IHpermutation. intuition auto.
 Qed.
 
+Definition predicate_xor {A} f1 f2 := forall (x : A), f1 x = true /\ f2 x = false \/ f1 x = false /\ f2 x = true.
+
+Theorem permutation_filter :
+  forall {A} (l : list A) f1 f2,
+  predicate_xor f1 f2 ->
+  permutation (filter f1 l ++ filter (fun x => f2 x) l) l.
+Proof.
+  intros ? ? ? ? ?. induction l.
+  - simpl. apply permutation_nil.
+  - simpl. unfold predicate_xor in H. specialize (H a). destruct (f1 a), (f2 a).
+    + intuition auto; discriminate.
+    + simpl. apply permutation_cons. auto.
+    + simpl. apply permutation_insert. auto.
+    + intuition auto; discriminate.
+Qed.
+
 Theorem permutation_same_head_inversion :
   forall {A} a (l1 l2 : list A),
   permutation (a :: l1) (a :: l2) ->
@@ -227,12 +258,10 @@ Theorem permutation_same_head_inversion :
 Proof.
   intros ? ? ? ? ?. inversion H. subst a0 l4. destruct l0.
   - injection H0 as ->. auto.
-  - injection H0 as -> <-. apply permutation_trans with (a  :: l0 ++ l3).
-    + apply permutation_move. apply permutation_refl.
-    + auto.
+  - injection H0 as -> <-. apply permutation_sym. apply permutation_move_back. apply permutation_sym. auto.
 Qed.
 
-Theorem app_permutation_inversion :
+Theorem permutation_app_inversion :
   forall {A} (l1 l2 l3 l4 : list A),
   permutation (l1 ++ l3) (l2 ++ l4) ->
   permutation l1 l2 ->
@@ -280,4 +309,41 @@ Proof.
   - injection H0 as -> <-. right. split.
     + apply permutation_sym in H2. inversion H2. subst a0 l5. apply list_in_insert.
     + apply list_in_insert.
+Qed.
+
+Theorem permutation_app :
+  forall {A} (l1 l2 l3 l4 : list A),
+  permutation l1 l2 ->
+  permutation l3 l4 ->
+  permutation (l1 ++ l3) (l2 ++ l4).
+Proof.
+  intros ? ?. induction l1; intros ? ? ? ? ?.
+  - apply permutation_sym in H. apply permutation_nil_inversion in H. subst l2. auto.
+  - apply permutation_sym in H. inversion H; subst a0 l1 l2; clear H.
+    apply permutation_sym. rewrite app_assoc. simpl. apply permutation_insert.
+    apply permutation_sym. rewrite <- app_assoc. apply IHl1.
+    + apply permutation_sym. auto.
+    + auto.
+Qed.
+
+Theorem permutation_app_trans :
+  forall {A} (l1 l2 l3 l4 l5 : list A),
+  permutation (l1 ++ l2) l5 ->
+  permutation l1 l3 ->
+  permutation l2 l4 ->
+  permutation (l3 ++ l4) l5.
+Proof.
+  intros ? ?. induction l1; intros ? ? ? ? ? ? ?.
+  - apply permutation_sym in H0. apply permutation_nil_inversion in H0. subst l3.
+    simpl. simpl in H. eauto using permutation_sym, permutation_trans.
+  - apply permutation_sym in H. apply permutation_move_back in H.
+    apply permutation_split in H. destruct H as (l6 & l7 & -> & ?).
+    apply permutation_sym in H0. inversion H0; subst a0 l1 l3; clear H0.
+    apply permutation_move_back. rewrite app_assoc. simpl. apply permutation_insert.
+    apply permutation_trans with (l8 ++ l2).
+    + clear H. rewrite <- app_assoc. apply IHl1 with l2.
+      * apply permutation_refl.
+      * apply permutation_sym. auto.
+      * auto.
+    + apply permutation_sym. auto.
 Qed.

@@ -273,7 +273,7 @@ Ltac2 rec compute_cost cost_functions depth input_constr :=
           if Array.for_all is_constant_one bl_costs
           then '1
           else Constr.Unsafe.make (Constr.Unsafe.Case ci c_replacement iv t bl_costs) in
-        add_const_to_cost_fun t_cost branches_cost depth
+        add_const_to_cost_fun branches_cost t_cost depth
       | Constr.Unsafe.Fix recs i nas cs =>
         let nas_replacements := Array.mapi (fun j binder =>
           Constr.Binder.make

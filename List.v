@@ -69,6 +69,63 @@ Fixpoint list_in {A} a (l : list A) :=
   | x :: l' => x = a \/ list_in a l'
   end.
 
+Theorem nat_strong_induction :
+  forall (P : nat -> Prop),
+  (forall n, (forall m, m < n -> P m) -> P n) ->
+  forall n, P n.
+Proof.
+  intros ? ? ?. cut (forall m, m <= n -> P m).
+  - intros ?. specialize (H0 n). apply H0. lia.
+  - induction n.
+    + intros ? ?. apply H. intros k ?. lia.
+    + intros ? ?. apply H. intros k ?. apply IHn. lia.
+Qed.
+
+Lemma le_trans_rev : forall n m p, m <= p -> n <= m -> n <= p.
+Proof.
+  eauto using le_trans.
+Qed.
+
+Ltac le_chain_l H :=
+  match type of H with
+  | ?a <= ?b =>
+    match goal with
+    | [ |- ?a <= ?b ] => exact H
+    | [ |- ?l <= S ?c ] => eapply le_trans_rev; [apply le_n_S; le_chain_l H | apply le_refl]
+    | [ |- ?l <= ?c + ?d ] => eapply le_trans_rev; [apply plus_le_compat_l; le_chain_l H | apply le_refl]
+    | [ |- ?l <= ?c + ?d ] => eapply le_trans_rev; [apply plus_le_compat_r; le_chain_l H | apply le_refl]
+    | [ |- ?l <= ?c * ?d ] => eapply le_trans_rev; [apply mult_le_compat_l; le_chain_l H | apply le_refl]
+    | [ |- ?l <= ?c * ?d ] => eapply le_trans_rev; [apply mult_le_compat_r; le_chain_l H | apply le_refl]
+    end
+  end.
+
+Ltac le_chain_r H :=
+  match type of H with
+  | ?a <= ?b =>
+    match goal with
+    | [ |- ?a <= ?b ] => exact H
+    | [ |- S ?c <= ?r ] => eapply le_trans; [apply le_n_S; le_chain_r H | apply le_refl]
+    | [ |- ?c + ?d <= ?r ] => eapply le_trans; [apply plus_le_compat_l; le_chain_r H | apply le_refl]
+    | [ |- ?c + ?d <= ?r ] => eapply le_trans; [apply plus_le_compat_r; le_chain_r H | apply le_refl]
+    | [ |- ?c * ?d <= ?r ] => eapply le_trans; [apply mult_le_compat_l; le_chain_r H | apply le_refl]
+    | [ |- ?c * ?d <= ?r ] => eapply le_trans; [apply mult_le_compat_r; le_chain_r H | apply le_refl]
+    end
+  end.
+
+Ltac le_chain H := first[eapply le_trans_rev; [le_chain_l H |] | eapply le_trans; [le_chain_r H |]].
+
+Ltac clear_S :=
+  simpl; repeat match goal with
+  | [ |- context[S ?n] ] => progress (rewrite <- (Nat.add_1_r n); simpl)
+  end.
+
+Theorem list_empty_or_not_empty : forall {A} (l : list A), {l = []} + {l <> []}.
+Proof.
+  intros ? l. destruct l.
+  - left. auto.
+  - right. discriminate.
+Qed.
+
 Theorem list_forall_positive :
   forall {A} f g (l : list A),
   (forall a, (f a : Prop) -> (g a : Prop)) ->
@@ -115,7 +172,7 @@ Proof.
   - simpl. auto.
 Qed.
 
-Theorem length_filter_lt : forall {A} (l : list A) f, length (filter f l) <= length l.
+Theorem length_filter_le : forall {A} f (l : list A), length (filter f l) <= length l.
 Proof.
   intros ? ? ?. induction l.
   - auto.
@@ -141,4 +198,21 @@ Proof.
   intros ? ? ? ?. induction l1.
   - simpl. intuition auto.
   - simpl. intuition auto.
+Qed.
+
+Theorem list_in_filter : forall {A} a f (l : list A), list_in a (filter f l) <-> list_in a l /\ f a = true.
+Proof.
+  intros ? ? ? ?. induction l.
+  - simpl. intuition auto.
+  - rename a0 into b. simpl. remember (f b) as f_b. destruct f_b.
+    + simpl. split.
+      * intros [-> | ?].
+        -- auto.
+        -- intuition auto.
+      * intuition auto.
+    + split.
+      * intuition auto.
+      * intros ([-> | ?] & ?).
+        -- rewrite H in Heqf_b. discriminate.
+        -- intuition auto.
 Qed.

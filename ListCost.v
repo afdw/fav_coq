@@ -31,6 +31,16 @@ Class Cost s (fun_ : signature_to_fun_type s) := {
 
 Arguments cost_fun {s} fun_ {Cost}.
 
+Section Cost_consDefiniton.
+
+#[local] Instance Cost_cons first_arg_type arg_types return_type fun_
+  (_ : Cost (Signature (first_arg_type :: arg_types) return_type) fun_) a :
+  Cost (Signature arg_types return_type) (fun_ a) | 1000 := {
+  cost_fun := (cost_fun fun_ a)
+}.
+
+End Cost_consDefiniton.
+
 Definition big_o {A} f g :=
   {c : nat | forall (a : A), f a <= c * (g a)}.
 
@@ -43,7 +53,18 @@ Definition unary_cost_constant {A} {R} {fun_} (cost : Cost (Signature [A] R) fun
 Definition binary_cost_constant {A} {B} {R} {fun_} (cost : Cost (Signature [A; B] R) fun_) :=
   constant (fun '(a, b) => (@cost_fun _ _ cost) a b).
 
-Definition app_cost := ltac2:(Cost.refine_compute_cost [] 3 '@app []).
+Definition app_cost {A} := ltac2:(Cost.refine_compute_cost [] 3 '@app []) A.
+
+Theorem app_cost_linear :
+  forall {A},
+  big_o
+    (fun '(l1, l2) => app_cost l1 l2)
+    (fun '(l1, l2) => 1 + length (l1 : list A) + length (l2 : list A)).
+Proof.
+  intros ?. exists 7. intros (l1, l2). induction l1.
+  - simpl. lia.
+  - simpl. lia.
+Qed.
 
 Definition length_cost {A} := ltac2:(Cost.refine_compute_cost [] 1 (eval red in (@length A)) []).
 
@@ -81,6 +102,20 @@ Proof.
   - simpl. lia.
   - simpl. specialize (H a). destruct (predicate a); lia.
 Qed.
+
+Theorem filter_cost_linear_when_predicate_cost_constant_binary :
+  forall {A B} (predicate : A -> B -> bool) {predicate_Cost: Cost (Signature [_; _] _) predicate},
+  binary_cost_constant predicate_Cost ->
+  big_o
+    (fun '(a, l) => @filter_cost _ (predicate a) (Cost_cons _ _ _ _ _ _) l)
+    (fun '(_, l) => 1 + length l).
+Proof.
+  intros ? ? ? ? ?. destruct H as (c & H). exists (c + 6). intros (a, l). induction l.
+  - simpl. lia.
+  - simpl. rename a0 into b. specialize (H (a, b)). destruct (predicate a b); lia.
+Qed.
+
+Check filter_cost_linear_when_predicate_cost_constant_binary.
 
 Section Example.
 

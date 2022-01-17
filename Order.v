@@ -179,3 +179,22 @@ Proof.
     + auto.
     + apply permutation_sym. auto.
 Qed.
+
+Theorem sorted_app :
+  forall {A} r {total_order : TotalOrder r} (l1 l2 : list A),
+  sorted r l1 ->
+  sorted r l2 ->
+  list_forall (fun x => list_forall (fun y => r x y) l2) l1 ->
+  sorted r (l1 ++ l2).
+Proof.
+  intros ? ? ? ?. induction l1; intros ? ? ? ?.
+  - auto.
+  - simpl. simpl in H, H1. destruct H as (? & ?), H1 as (? & ?). split.
+    + apply list_forall_app; auto.
+    + apply IHl1.
+      * intuition auto.
+      * auto.
+      * eapply list_forall_positive.
+        2: apply H3.
+        intros b ?. simpl in H4. intuition auto.
+Qed.
